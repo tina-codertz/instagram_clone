@@ -1,72 +1,123 @@
-import prisma from '../../config/db.js';
-
+import { query } from '../../config/db.js';
 export const getUsers = async (search) => {
-  return prisma.user.findMany({
-    where: search ? { username: { contains: search, mode: 'insensitive' } } : {},
-    select: { id: true, username: true, bio: true, profilePic: true },
-  });
+  if (search) {
+    const { rows } = await query(
+      `
+      SELECT id, username, bio, profile_pic
+      FROM users
+      WHERE username ILIKE $1
+      `,
+      [`%${search}%`]
+    );
+    return rows;
+  }
+
+  const { rows } = await query(
+    `SELECT id, username, bio, profile_pic FROM users`
+  );
+  return rows;
 };
 
 export const getProfile = async (id) => {
-  const parsedId = parseInt(id);
-  if (isNaN(parsedId)) throw new Error('Invalid user ID');
+  const userId = parseInt(id);
+  if (isNaN(userId)) throw new Error('Invalid user ID');
 
-  const user = await prisma.user.findUnique({
-    where: { id: parsedId },
-    select: { id: true, username: true, bio: true, profilePic: true },
-  });
+  const { rows: users } = await query(
+    `
+    SELECT id, username, bio, profile_pic
+    FROM users
+    WHERE id = $1
+    `,
+    [userId]
+  );
 
-  if (!user) throw new Error('User not found');
+  if (!users.length) throw new Error('User not found');
 
-  const [postCount, followerCount, followingCount, posts] = await Promise.all([
-    prisma.post.count({ where: { userId: parsedId } }),
-    prisma.follow.count({ where: { followingId: parsedId } }),
-    prisma.follow.count({ where: { followerId: parsedId } }),
-    prisma.post.findMany({
-      where: { userId: parsedId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, image: true, caption: true, createdAt: true }, // limit fields
-      take: 20, // optional: limit posts shown
-    }),
+  const user = users[0];
+
+  const [
+    { rows: postCount },
+    { rows: followerCount },
+    { rows: followingCount },
+    { rows: posts },
+  ] = await Promise.all([
+    query(`SELECT COUNT(*)::int AS count FROM posts WHERE user_id = $1`, [userId]),
+    query(`SELECT COUNT(*)::int AS count FROM follows WHERE following_id = $1`, [userId]),
+    query(`SELECT COUNT(*)::int AS count FROM follows WHERE follower_id = $1`, [userId]),
+    query(
+      `
+      SELECT id, image, content, created_at
+      FROM posts
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 20
+      `,
+      [userId]
+    ),
   ]);
 
   return {
     ...user,
-    postCount,
-    followerCount,
-    followingCount,
+    postCount: postCount[0].count,
+    followerCount: followerCount[0].count,
+    followingCount: followingCount[0].count,
     posts,
   };
 };
 
 export const follow = async (followerId, followingId) => {
-  if (followerId === followingId) throw new Error('Cannot follow self');
-  const existing = await prisma.follow.findUnique({ where: { followerId_followingId: { followerId, followingId } } });
-  if (existing) throw new Error('Already following');
-  await prisma.follow.create({ data: { followerId, followingId } });
+  if (followerId === followingId) {
+    throw new Error('Cannot follow self');
+  }
+
+  try {
+    await query(
+      `
+      INSERT INTO follows (follower_id, following_id)
+      VALUES ($1, $2)
+      `,
+      [followerId, followingId]
+    );
+  } catch (err) {
+    if (err.code === '23505') {
+      throw new Error('Already following');
+    }
+    throw err;
+  }
 };
 
 export const unfollow = async (followerId, followingId) => {
-  await prisma.follow.deleteMany({ where: { followerId, followingId } });
+  await query(
+    `
+    DELETE FROM follows
+    WHERE follower_id = $1 AND following_id = $2
+    `,
+    [followerId, followingId]
+  );
 };
-
 export const getAccountInfo = async (id) => {
-  if (!id) throw new Error('User ID is required');
+  const userId = parseInt(id);
+  if (isNaN(userId)) throw new Error('User ID is required');
 
-  const user = await prisma.user.findUnique({
-    where: { id: parseInt(id) },
-    select: { 
-      id: true, 
-      username: true, 
-      email: true, 
-      bio: true, 
-      profilePic: true, 
-      createdAt: true 
-    },
-  });
+  const { rows } = await query(
+    `
+    SELECT
+      id,
+      username,
+      email,
+      bio,
+      profile_pic,
+      created_at
+    FROM users
+    WHERE id = $1
+    `,
+    [userId]
+  );
 
-  if (!user) throw new Error('User not found');
+  if (!rows.length) throw new Error('User not found');
 
-  return user;
+  return rows[0];
 };
+
+
 

@@ -1,19 +1,25 @@
-import prisma from '../../config/db.js';
+import { query } from "../../config/db.js";
 
-export const likePost = async (userId, postId) => {
-  const existing = await prisma.like.findUnique({
-    where: { postId_userId: { postId: parseInt(postId), userId } },
-  });
-  if (existing) throw new Error('Already liked');
+export const likePost = async (userId,postId) =>{
+  try{
+    await query(
 
-  await prisma.like.create({
-    data: { postId: parseInt(postId), userId },
-  });
+      `INSERT INTO likes (post_id,user_id)
+      VALUES ($1,$2)`,
+      [parseInt(postId),userId]
+    );
+  } catch(err){
+    if (err.code==="23505"){
+      throw new Error("Already liked");
+    }
+    throw err;
+  }
 };
 
-export const unlikePost = async (userId, postId) => {
-  await prisma.like.deleteMany({
-    where: { postId: parseInt(postId), userId },
-  });
+export const unlikePost = async (userId,postId) =>{
+  await query(
+    `DELETE FROM likes WHERE post_id=$1 AND user_id=$2`,
+    [parseInt(postId), userId]
+  );
 };
 

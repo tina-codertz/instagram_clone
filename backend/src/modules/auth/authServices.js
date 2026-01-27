@@ -1,19 +1,51 @@
-import prisma from '../../config/db.js';
-import { hashPassword, comparePassword } from '../../utils/hash.js';
-import { generateToken } from '../../utils/jwt.js';
+import { hashPassword, comparePassword } from "../../utils/hash.js";
+import { generateToken } from "../../utils/jwt.js";
+import { query } from "../../config/db.js";
 
 export const register = async ({ username, email, password }) => {
   const hashed = await hashPassword(password);
-  return prisma.user.create({  // ← Changed from _user.create
-    data: { username, email, password: hashed },
-  });
+
+  const { rows } = await query(
+    `
+    INSERT INTO users (username, email, password)
+    VALUES ($1, $2, $3)
+    RETURNING id, username, email
+    `,
+    [username, email, hashed]
+  );
+
+  return rows[0];
 };
 
 export const login = async ({ email, password }) => {
-  const user = await prisma.user.findUnique({ where: { email } });  // ← Changed from _user.findUnique
-  if (!user || !(await comparePassword(password, user.password))) {
-    throw new Error('Invalid credentials');
+  const { rows } = await query(
+    `
+    SELECT id, username, email, password
+    FROM users
+    WHERE email = $1
+    `,
+    [email]
+  );
+
+  if (!rows.length) {
+    throw new Error("Invalid credentials");
   }
+
+  const user = rows[0];
+
+  const isMatch = await comparePassword(password, user.password);
+  if (!isMatch) {
+    throw new Error("Invalid credentials");
+  }
+
   const token = generateToken({ id: user.id });
-  return { token, user: { id: user.id, username: user.username, email: user.email } };
+
+  return {
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+    },
+  };
 };

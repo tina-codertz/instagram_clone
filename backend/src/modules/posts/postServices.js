@@ -1,50 +1,116 @@
-import prisma from '../../config/db.js';
-import cloudinary from '../../config/cloudinary.js'; // ← Changed to default import
+import { query } from '../../config/db.js';
+import cloudinary from '../../config/cloudinary.js';
 
 export const createPost = async (userId, content, file) => {
   let image = null;
+
   if (file) {
-    const result = await cloudinary.uploader.upload(file.path); // ← Use cloudinary.uploader
+    const result = await cloudinary.uploader.upload(file.path);
     image = result.secure_url;
   }
-  return prisma.post.create({
-    data: { content, image, userId },
-  });
+
+  const { rows } = await query(
+    `
+    INSERT INTO posts (content, image, user_id)
+    VALUES ($1, $2, $3)
+    RETURNING id, content, image, user_id, created_at
+    `,
+    [content, image, userId]
+  );
+
+  return rows[0];
 };
-
 export const getFeed = async (userId) => {
-  const following = await prisma.follow.findMany({
-    where: { followerId: userId },
-    select: { followingId: true },
-  });
-  const followingIds = following.map(f => f.followingId);
+  const { rows } = await query(
+    `
+    SELECT
+      p.id,
+      p.content,
+      p.image,
+      p.created_at,
+      u.username,
+      COUNT(DISTINCT l.id)::int AS likes_count,
+      COUNT(DISTINCT c.id)::int AS comments_count
+    FROM posts p
+    JOIN users u ON u.id = p.user_id
+    LEFT JOIN follows f ON f.following_id = p.user_id
+    LEFT JOIN likes l ON l.post_id = p.id
+    LEFT JOIN comments c ON c.post_id = p.id
+    WHERE p.user_id = $1 OR f.follower_id = $1
+    GROUP BY p.id, u.username
+    ORDER BY p.created_at DESC
+    `,
+    [userId]
+  );
 
-  return prisma.post.findMany({
-    where: { userId: { in: [...followingIds, userId] } },
-    include: {
-      user: { select: { username: true } },
-      likes: true,
-      comments: true,
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  return rows;
 };
 
 export const getPost = async (id) => {
-  return prisma.post.findUnique({
-    where: { id: parseInt(id) },
-    include: {
-      user: true,
-      likes: true,
-      comments: { include: { user: true } },
-    },
-  });
+  const { rows } = await query(
+    `
+    SELECT
+      p.id,
+      p.content,
+      p.image,
+      p.created_at,
+      u.id AS user_id,
+      u.username
+    FROM posts p
+    JOIN users u ON u.id = p.user_id
+    WHERE p.id = $1
+    `,
+    [parseInt(id)]
+  );
+
+  if (!rows.length) return null;
+
+  const post = rows[0];
+
+  const { rows: comments } = await query(
+    `
+    SELECT
+      c.id,
+      c.content,
+      c.created_at,
+      u.id AS user_id,
+      u.username
+    FROM comments c
+    JOIN users u ON u.id = c.user_id
+    WHERE c.post_id = $1
+    ORDER BY c.created_at DESC
+    `,
+    [parseInt(id)]
+  );
+
+  const { rows: likes } = await query(
+    `SELECT user_id FROM likes WHERE post_id = $1`,
+    [parseInt(id)]
+  );
+
+  return {
+    ...post,
+    comments,
+    likesCount: likes.length,
+  };
 };
 
 export const deletePost = async (id, userId) => {
-  const post = await prisma.post.findUnique({ where: { id: parseInt(id) } });
-  if (!post || post.userId !== userId) {
+  const { rows } = await query(
+    `SELECT user_id FROM posts WHERE id = $1`,
+    [parseInt(id)]
+  );
+
+  if (!rows.length || rows[0].user_id !== userId) {
     throw new Error('Unauthorized or post not found');
   }
-  await prisma.post.delete({ where: { id: parseInt(id) } });
+
+  await query(
+    `DELETE FROM posts WHERE id = $1`,
+    [parseInt(id)]
+  );
 };
+
+
+
+
