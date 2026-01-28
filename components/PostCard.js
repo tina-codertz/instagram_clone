@@ -25,7 +25,7 @@ export default function PostCard({
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
 
-  const isLiked = currentUser ? post.likes.includes(currentUser.id) : false;
+  const isLiked = currentUser ? (post.likes || []).includes(currentUser.id) : false;
   const canDelete = currentUser?.id === post.userId;
 
   const handleAddComment = () => {
@@ -43,7 +43,7 @@ export default function PostCard({
           <View>
             <Text style={styles.name}>{author?.name || 'Unknown'}</Text>
             <Text style={styles.timestamp}>
-              {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
+              {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true }) : 'just now'}
             </Text>
           </View>
         </View>
@@ -74,7 +74,7 @@ export default function PostCard({
             color={isLiked ? '#EF4444' : '#6B7280'}
           />
           <Text style={[styles.actionText, isLiked && { color: '#EF4444' }]}>
-            {post.likes.length}
+            {post.likes ? post.likes.length : 0}
           </Text>
         </TouchableOpacity>
 
