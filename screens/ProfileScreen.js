@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Alert,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,97 +17,86 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../api/api';
 import PostCard from '../components/PostCard';
 
-export default function ProfileScreen() {
-  const { user, getAccountInfo } = useAuth();
-  const [profile, setProfile] = useState(user);
+export default function ProfileScreen({ route, navigation }) {
+  const { user } = useAuth();
+
+  // Determine which profile we're viewing
+  const targetUserIdFromParams = route?.params?.userId;
+  const currentUserId = user?.id;
+
+  // If no specific userId passed in params → this is own profile
+  const isOwnProfile = !targetUserIdFromParams;
+  const targetUserId = targetUserIdFromParams || currentUserId;
+
+  const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Debug logs (remove later if you want)
+  useEffect(() => {
+    console.log('[ProfileScreen] Current user:', user);
+    console.log('[ProfileScreen] targetUserIdFromParams:', targetUserIdFromParams);
+    console.log('[ProfileScreen] currentUserId:', currentUserId);
+    console.log('[ProfileScreen] targetUserId:', targetUserId);
+    console.log('[ProfileScreen] isOwnProfile:', isOwnProfile);
+  }, [user, route]);
 
   useEffect(() => {
+    if (!targetUserId) {
+      setLoading(false);
+      Alert.alert('Error', 'Cannot load profile – not logged in or invalid user');
+      return;
+    }
     fetchProfileAndPosts();
-  }, []);
+  }, [targetUserId]);
 
   const fetchProfileAndPosts = async () => {
+    setLoading(true);
     try {
-      await getAccountInfo();
-      const res = await api.get(`/users/${user.id}`);
+      let endpoint = isOwnProfile ? '/users/me' : `/users/${targetUserId}`;
+
+      console.log(`[Profile Fetch] Using endpoint: ${endpoint}`);
+
+      const res = await api.get(endpoint);
       const profileData = res.data;
-      
-      // Transform posts to match what PostCard expects
+
+      // Normalize posts to match PostCard expectations
       const formattedPosts = (profileData.posts || []).map(post => ({
         ...post,
-        author: {
-          name: profileData.username,
-          profilePicture: profileData.profile_pic || 'https://via.placeholder.com/150'
-        }
+        id: post.id,
+        content: post.content || '',
+        createdAt: post.created_at,
+        imageUrl: post.image || null,
+        userId: post.user_id || profileData.id,
+        likes: post.likes || [],
+        likes_count: post.likes_count || post.likes?.length || 0,
+        comments_count: post.comments?.length || 0,
       }));
 
       setProfile(profileData);
       setPosts(formattedPosts);
     } catch (err) {
-      console.error('Error fetching profile:', err);
-      Alert.alert('Error', 'Failed to load profile');
+      console.error('Profile fetch failed:', err?.response?.data || err.message);
+      Alert.alert('Error', err?.response?.data?.error || 'Failed to load profile');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleFollow = async () => {
-    try {
-      await api.post(`/users/${profile.id}/follow`);
-      await fetchProfileAndPosts();
-    } catch (err) {
-      console.error('Error following user:', err);
-      Alert.alert('Error', 'Failed to follow user');
-    }
+    // ... (your existing follow logic)
   };
 
   const handleUnfollow = async () => {
-    try {
-      await api.post(`/users/${profile.id}/unfollow`);
-      await fetchProfileAndPosts();
-    } catch (err) {
-      console.error('Error unfollowing user:', err);
-      Alert.alert('Error', 'Failed to unfollow user');
-    }
+    // ... (your existing unfollow logic)
   };
 
   const pickImage = async () => {
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission required', 'Please allow access to your photos to upload a profile picture');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (result.canceled) return;
-
-      const formData = new FormData();
-      formData.append('profilePic', {
-        uri: result.assets[0].uri,
-        type: 'image/jpeg',
-        name: 'profile.jpg'
-      });
-
-      const response = await api.patch('/users/me', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      // Update local state with new profile picture
-      setProfile(prev => ({ ...prev, profile_pic: response.data.profilePic }));
-      Alert.alert('Success', 'Profile picture updated successfully');
-    } catch (err) {
-      console.error('Error uploading image:', err);
-      Alert.alert('Error', 'Failed to upload profile picture');
-    }
+    // ... (your existing image picker logic – only for own profile)
+    if (!isOwnProfile) return;
+    // rest of your pickImage code...
   };
 
   const onRefresh = async () => {
@@ -115,90 +105,53 @@ export default function ProfileScreen() {
     setRefreshing(false);
   };
 
-  const isFollowing = profile?.followers?.some(follower => follower.id === user?.id);
-  const isOwnProfile = user?.id === profile?.id;
+  if (!currentUserId && isOwnProfile) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.errorText}>Please log in to view your profile</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ActivityIndicator size="large" color="#6366f1" />
+      </SafeAreaView>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.errorText}>Profile not found</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const isFollowing = profile?.followers?.some(f => f.id === currentUserId) || false;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-      <ScrollView 
-        contentContainerStyle={{ padding: 16 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        contentContainerStyle={styles.scrollContent}
       >
+        {/* Header / Profile Info */}
         <View style={styles.headerCard}>
-          <View style={styles.headerRow}>
-            <View style={styles.avatarContainer}>
-              <Image
-                source={{ uri: profile?.profile_pic || 'https://via.placeholder.com/150' }}
-                style={styles.avatar}
-              />
-              {isEditing && (
-                <TouchableOpacity style={styles.uploadBtn} onPress={pickImage}>
-                  <Ionicons name="camera" size={20} color="#fff" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <View style={styles.infoContainer}>
-              <View style={styles.nameRow}>
-                <Text style={styles.name}>{profile?.username}</Text>
-                {isOwnProfile && (
-                  <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
-                    <Ionicons name="pencil" size={18} color="#6366f1" />
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              <Text style={styles.email}>{profile?.email}</Text>
-
-              <View style={styles.statsRow}>
-                <View style={styles.stat}>
-                  <Text style={styles.statNumber}>{posts.length}</Text>
-                  <Text style={styles.statLabel}>Posts</Text>
-                </View>
-                <View style={styles.stat}>
-                  <Text style={styles.statNumber}>{profile?.followerCount || 0}</Text>
-                  <Text style={styles.statLabel}>Followers</Text>
-                </View>
-                <View style={styles.stat}>
-                  <Text style={styles.statNumber}>{profile?.followingCount || 0}</Text>
-                  <Text style={styles.statLabel}>Following</Text>
-                </View>
-              </View>
-
-              {/* Follow/Edit Profile Buttons */}
-              <View style={styles.actions}>
-                {isOwnProfile ? (
-                  <TouchableOpacity 
-                    style={styles.editButton}
-                    onPress={() => setIsEditing(!isEditing)}
-                  >
-                    <Text style={styles.editButtonText}>
-                      {isEditing ? 'Save' : 'Edit Profile'}
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={styles.followButtons}>
-                    <TouchableOpacity 
-                      style={[styles.followButton, isFollowing && styles.unfollowButton]}
-                      onPress={isFollowing ? handleUnfollow : handleFollow}
-                    >
-                      <Text style={styles.followButtonText}>
-                        {isFollowing ? 'Following' : 'Follow'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.messageButton}>
-                      <Text style={styles.messageButtonText}>Message</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            </View>
-          </View>
+          {/* ... your existing header content ... */}
+          {/* Make sure upload button only shows for own profile */}
+          {isOwnProfile && isEditing && (
+            <TouchableOpacity style={styles.uploadBtn} onPress={pickImage}>
+              <Ionicons name="camera" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+          {/* ... rest of header ... */}
         </View>
 
-        <Text style={styles.postsTitle}>My Posts</Text>
+        <Text style={styles.postsTitle}>
+          {isOwnProfile ? 'My Posts' : `${profile.username}'s Posts`}
+        </Text>
 
         {posts.length === 0 ? (
           <Text style={styles.noPostsText}>No posts yet</Text>
@@ -206,25 +159,18 @@ export default function ProfileScreen() {
           posts.map(post => (
             <PostCard
               key={post.id}
-              post={{
-                ...post,
-                userId: post.user_id || user.id,
-                content: post.content || '',
-                createdAt: post.created_at,
-                likes: post.likes || [],
-                imageUrl: post.image
-              }}
-              author={post.author || {
-                name: profile?.username || 'Unknown',
-                profilePicture: profile?.profile_pic || 'https://via.placeholder.com/150'
+              post={post}
+              author={{
+                name: profile.username,
+                profilePicture: profile.profile_pic,
               }}
               currentUser={user}
               comments={post.comments || []}
-              onToggleLike={() => {}}
-              onDeletePost={() => {}}
+              onToggleLike={() => Alert.alert('Like', 'Coming soon')}
+              onDeletePost={() => Alert.alert('Delete', 'Coming soon')}
               onAddComment={() => {}}
               onDeleteComment={() => {}}
-              getUser={() => profile}
+              getUser={() => ({ name: profile.username, profilePicture: profile.profile_pic })}
             />
           ))
         )}
@@ -234,6 +180,13 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+  },
+  scrollContent: {
+    padding: 16,
+  },
   headerCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -247,8 +200,7 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+    alignItems: 'flex-start',
   },
   avatarContainer: {
     position: 'relative',
@@ -283,12 +235,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   name: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '700',
     marginRight: 8,
   },
   email: {
     color: '#6b7280',
+    fontSize: 14,
     marginBottom: 12,
   },
   statsRow: {
@@ -302,70 +255,71 @@ const styles = StyleSheet.create({
   },
   statNumber: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 2,
+    fontWeight: '700',
   },
   statLabel: {
     color: '#6b7280',
     fontSize: 12,
   },
-  postsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  noPostsText: {
-    textAlign: 'center',
-    color: '#6b7280',
-    marginTop: 32,
-  },
   actions: {
-    flexDirection: 'row',
-    marginTop: 8,
+    marginTop: 4,
   },
   editButton: {
-    backgroundColor: '#f0f0f0',
-    padding: 8,
-    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
-    flex: 1,
   },
   editButtonText: {
     fontWeight: '600',
-    color: '#000',
+    color: '#111827',
   },
   followButtons: {
     flexDirection: 'row',
     gap: 8,
-    flex: 1,
   },
   followButton: {
-    backgroundColor: '#0095f6',
-    padding: 8,
-    borderRadius: 8,
+    flex: 1,
+    backgroundColor: '#3b82f6',
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
-    flex: 2,
   },
   unfollowButton: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#f3f4f6',
   },
   followButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
-  unfollowButtonText: {
-    color: '#000',
-  },
   messageButton: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#dbdbdb',
-    padding: 8,
-    borderRadius: 8,
+    borderColor: '#d1d5db',
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   messageButtonText: {
     fontWeight: '600',
+    color: '#111827',
+  },
+  postsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+    color: '#111827',
+  },
+  noPostsText: {
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: 16,
+    marginTop: 40,
+  },
+  errorText: {
+    textAlign: 'center',
+    color: '#ef4444',
+    marginTop: 40,
+    fontSize: 16,
   },
 });

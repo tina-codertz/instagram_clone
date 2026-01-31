@@ -19,8 +19,14 @@ export const getUsers = async (search) => {
 };
 
 export const getProfile = async (id) => {
-  const userId = parseInt(id);
-  if (isNaN(userId)) throw new Error('Invalid user ID');
+  if (!id) {
+    throw new Error('User ID is required');
+  }
+
+  const userId = parseInt(id, 10);
+  if (isNaN(userId) || userId <= 0) {
+    throw new Error(`Invalid user ID format: "${id}" (must be a positive integer)`);
+  }
 
   const { rows: users } = await query(
     `
@@ -95,9 +101,16 @@ export const unfollow = async (followerId, followingId) => {
     [followerId, followingId]
   );
 };
+
 export const getAccountInfo = async (id) => {
-  const userId = parseInt(id);
-  if (isNaN(userId)) throw new Error('User ID is required');
+  if (!id) {
+    throw new Error('User ID is required');
+  }
+
+  const userId = parseInt(id, 10);
+  if (isNaN(userId) || userId <= 0) {
+    throw new Error(`Invalid user ID format: "${id}" (must be a positive integer)`);
+  }
 
   const { rows } = await query(
     `

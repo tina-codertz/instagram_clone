@@ -25,8 +25,13 @@ export default function PostCard({
   const [commentText, setCommentText] = useState('');
   const [showComments, setShowComments] = useState(false);
 
-  const isLiked = currentUser ? (post.likes || []).includes(currentUser.id) : false;
-  const canDelete = currentUser?.id === post.userId;
+  // Like status (will improve once you have real likes array)
+  const isLiked = currentUser 
+    ? (post.likes || []).includes(currentUser.id) 
+    : false;
+
+  // Delete permission - try multiple possible locations for user ID
+  const canDelete = currentUser?.id === (post.userId || post.user?.id || post.user_id);
 
   const handleAddComment = () => {
     if (!commentText.trim() || !currentUser) return;
@@ -34,24 +39,40 @@ export default function PostCard({
     setCommentText('');
   };
 
+  // Display name: prefer author → post.username → fallback
+  const displayName = author?.name || post.username || 'Unknown';
+
+  // Avatar: real → generated with initials → plain placeholder
+  const avatarUri = 
+    author?.profilePicture ||
+    author?.avatar ||
+    post.user?.profilePicture ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6366f1&color=fff&size=128`;
+
   return (
     <View style={styles.card}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.userInfo}>
           <Image 
-            source={{ uri: author?.profilePicture || 'https://via.placeholder.com/150' }} 
+            source={{ uri: avatarUri }} 
             style={styles.avatar} 
           />
           <View>
-            <Text style={styles.name}>{author?.name || 'Unknown'}</Text>
+            <Text style={styles.name}>{displayName}</Text>
             <Text style={styles.timestamp}>
-              {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true }) : 'just now'}
+              {post.createdAt || post.created_at
+                ? formatDistanceToNow(
+                    new Date(post.createdAt || post.created_at),
+                    { addSuffix: true }
+                  )
+                : 'just now'}
             </Text>
           </View>
         </View>
+
         {canDelete && (
-          <TouchableOpacity onPress={() => onDeletePost(post.id)}>
+          <TouchableOpacity onPress={() => onDeletePost?.(post.id)}>
             <Ionicons name="trash-outline" size={22} color="#EF4444" />
           </TouchableOpacity>
         )}
@@ -61,15 +82,19 @@ export default function PostCard({
       <Text style={styles.content}>{post.content}</Text>
 
       {/* Image */}
-      {post.imageUrl && (
-        <Image source={{ uri: post.imageUrl }} style={styles.postImage} />
+      {(post.imageUrl || post.image) && (
+        <Image
+          source={{ uri: post.imageUrl || post.image }}
+          style={styles.postImage}
+          resizeMode="cover"
+        />
       )}
 
       {/* Actions */}
       <View style={styles.actions}>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => onToggleLike(post.id)}
+          onPress={() => onToggleLike?.(post.id)}
         >
           <Ionicons
             name={isLiked ? 'heart' : 'heart-outline'}
@@ -77,7 +102,7 @@ export default function PostCard({
             color={isLiked ? '#EF4444' : '#6B7280'}
           />
           <Text style={[styles.actionText, isLiked && { color: '#EF4444' }]}>
-            {post.likes ? post.likes.length : 0}
+            {post.likes_count ?? (post.likes?.length ?? 0)}
           </Text>
         </TouchableOpacity>
 
@@ -86,32 +111,38 @@ export default function PostCard({
           onPress={() => setShowComments(!showComments)}
         >
           <Ionicons name="chatbubble-outline" size={26} color="#6B7280" />
-          <Text style={styles.actionText}>{comments.length}</Text>
+          <Text style={styles.actionText}>
+            {post.comments_count ?? comments.length ?? 0}
+          </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Comments */}
+      {/* Comments Section */}
       {showComments && (
         <View style={styles.commentsSection}>
-          {/* Comments List */}
           {comments.length > 0 ? (
             comments.map((comment, index) => {
-              const commentAuthor = getUser ? getUser(comment.userId) : null;
+              const commentAuthor = getUser ? getUser(comment.userId || comment.user?.id) : null;
+              const commentName = commentAuthor?.name || comment.username || 'Unknown';
+
               return (
-                <View key={index} style={styles.comment}>
-                  <Image 
-                    source={{ uri: commentAuthor?.profilePicture || 'https://via.placeholder.com/150' }} 
-                    style={styles.commentAvatar} 
+                <View key={comment.id || index} style={styles.comment}>
+                  <Image
+                    source={{
+                      uri:
+                        commentAuthor?.profilePicture ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(commentName)}&background=6b7280&color=fff`,
+                    }}
+                    style={styles.commentAvatar}
                   />
                   <View style={styles.commentContent}>
-                    <Text style={styles.commentAuthor}>
-                      {commentAuthor?.name || 'Unknown'}
-                    </Text>
-                    <Text style={styles.commentText}>{comment.text}</Text>
+                    <Text style={styles.commentAuthor}>{commentName}</Text>
+                    <Text style={styles.commentText}>{comment.text || comment.content}</Text>
                   </View>
-                  {currentUser?.id === comment.userId && (
-                    <TouchableOpacity 
-                      onPress={() => onDeleteComment(post.id, comment.id)}
+
+                  {currentUser?.id === (comment.userId || comment.user?.id) && (
+                    <TouchableOpacity
+                      onPress={() => onDeleteComment?.(post.id, comment.id)}
                       style={styles.deleteCommentButton}
                     >
                       <Ionicons name="close" size={16} color="#6B7280" />
@@ -124,11 +155,17 @@ export default function PostCard({
             <Text style={styles.noCommentsText}>No comments yet</Text>
           )}
 
-          {/* Add Comment */}
+          {/* Add Comment Input */}
           <View style={styles.commentInputRow}>
-            <Image 
-              source={{ uri: currentUser?.profile_pic || 'https://via.placeholder.com/150' }} 
-              style={styles.smallAvatar} 
+            <Image
+              source={{
+                uri:
+                  currentUser?.profilePicture ||
+                  currentUser?.profile_pic ||
+                  currentUser?.avatar ||
+                  `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.username || currentUser?.name || 'You')}&background=3b82f6&color=fff`,
+              }}
+              style={styles.smallAvatar}
             />
             <TextInput
               placeholder="Write a comment..."
@@ -137,6 +174,7 @@ export default function PostCard({
               style={styles.commentInput}
               onSubmitEditing={handleAddComment}
               returnKeyType="send"
+              multiline
             />
             <TouchableOpacity onPress={handleAddComment}>
               <Ionicons name="send" size={24} color="#3B82F6" />
@@ -270,6 +308,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginRight: 8,
     fontSize: 14,
+    maxHeight: 80,
   },
   deleteCommentButton: {
     padding: 4,
