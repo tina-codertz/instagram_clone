@@ -38,6 +38,7 @@ export default function FeedScreen() {
 
   const getUserFromPost = (post) => post.user || { username: 'Unknown' };
 
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -58,6 +59,7 @@ export default function FeedScreen() {
             </View>
           }
           renderItem={({ item }) => (
+              console.log("Post data:", JSON.stringify(item, null, 2)),
             <PostCard
               post={item}
               author={getUserFromPost(item)}
@@ -68,8 +70,12 @@ export default function FeedScreen() {
               onAddComment={(content) => addComment(item.id, content)}
               onDeleteComment={deleteComment}
               getUser={(userId) => posts.find(p => p.user?.id === userId)?.user}
+              
             />
+            
           )}
+          
+
           contentContainerStyle={{ padding: 16 }}
           showsVerticalScrollIndicator={false}
           onRefresh={refresh}

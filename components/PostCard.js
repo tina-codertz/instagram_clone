@@ -1,4 +1,4 @@
-import React ,{useState} from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,7 @@ export default function PostCard({
   post,
   author,
   currentUser,
-  comments,
+  comments = [],
   onToggleLike,
   onDeletePost,
   onAddComment,
@@ -39,7 +39,10 @@ export default function PostCard({
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.userInfo}>
-          <Image source={{ uri: author?.profilePicture }} style={styles.avatar} />
+          <Image 
+            source={{ uri: author?.profilePicture || 'https://via.placeholder.com/150' }} 
+            style={styles.avatar} 
+          />
           <View>
             <Text style={styles.name}>{author?.name || 'Unknown'}</Text>
             <Text style={styles.timestamp}>
@@ -90,47 +93,55 @@ export default function PostCard({
       {/* Comments */}
       {showComments && (
         <View style={styles.commentsSection}>
+          {/* Comments List */}
+          {comments.length > 0 ? (
+            comments.map((comment, index) => {
+              const commentAuthor = getUser ? getUser(comment.userId) : null;
+              return (
+                <View key={index} style={styles.comment}>
+                  <Image 
+                    source={{ uri: commentAuthor?.profilePicture || 'https://via.placeholder.com/150' }} 
+                    style={styles.commentAvatar} 
+                  />
+                  <View style={styles.commentContent}>
+                    <Text style={styles.commentAuthor}>
+                      {commentAuthor?.name || 'Unknown'}
+                    </Text>
+                    <Text style={styles.commentText}>{comment.text}</Text>
+                  </View>
+                  {currentUser?.id === comment.userId && (
+                    <TouchableOpacity 
+                      onPress={() => onDeleteComment(post.id, comment.id)}
+                      style={styles.deleteCommentButton}
+                    >
+                      <Ionicons name="close" size={16} color="#6B7280" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })
+          ) : (
+            <Text style={styles.noCommentsText}>No comments yet</Text>
+          )}
+
           {/* Add Comment */}
           <View style={styles.commentInputRow}>
-            <Image source={{ uri: currentUser.profilePicture }} style={styles.smallAvatar} />
+            <Image 
+              source={{ uri: currentUser?.profile_pic || 'https://via.placeholder.com/150' }} 
+              style={styles.smallAvatar} 
+            />
             <TextInput
               placeholder="Write a comment..."
               value={commentText}
               onChangeText={setCommentText}
               style={styles.commentInput}
+              onSubmitEditing={handleAddComment}
+              returnKeyType="send"
             />
-            <TouchableOpacity onPress={handleAddComment} disabled={!commentText.trim()}>
-              <Ionicons
-                name="send"
-                size={22}
-                color={commentText.trim() ? '#4F46E5' : '#9CA3AF'}
-              />
+            <TouchableOpacity onPress={handleAddComment}>
+              <Ionicons name="send" size={24} color="#3B82F6" />
             </TouchableOpacity>
           </View>
-
-          {/* Comment List */}
-          {comments.map((comment) => {
-            const commenter = getUser(comment.userId);
-            const canDeleteComment = currentUser?.id === comment.userId;
-
-            return (
-              <View key={comment.id} style={styles.comment}>
-                <Image source={{ uri: commenter?.profilePicture }} style={styles.smallAvatar} />
-                <View style={styles.commentBubble}>
-                  <Text style={styles.commentName}>{commenter?.name}</Text>
-                  <Text style={styles.commentText}>{comment.content}</Text>
-                  <Text style={styles.commentTime}>
-                    {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
-                  </Text>
-                </View>
-                {canDeleteComment && (
-                  <TouchableOpacity onPress={() => onDeleteComment(comment.id)}>
-                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          })}
         </View>
       )}
     </View>
@@ -145,40 +156,123 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 3,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  userInfo: { flexDirection: 'row', alignItems: 'center' },
-  avatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12 },
-  name: { fontSize: 16, fontWeight: 'bold', color: '#111827' },
-  timestamp: { fontSize: 13, color: '#6B7280' },
-  content: { fontSize: 16, color: '#111827', marginVertical: 12, lineHeight: 22 },
-  postImage: { width: '100%', height: 320, borderRadius: 12, marginVertical: 12 },
-  actions: { flexDirection: 'row', gap: 24, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  actionButton: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  actionText: { fontSize: 15, color: '#6B7280' },
-  commentsSection: { marginTop: 16 },
-  commentInputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
-  smallAvatar: { width: 36, height: 36, borderRadius: 18 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  name: {
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  timestamp: {
+    color: '#6B7280',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  content: {
+    fontSize: 15,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  postImage: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  actions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 12,
+    marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 24,
+  },
+  actionText: {
+    marginLeft: 6,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  commentsSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  comment: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    alignItems: 'flex-start',
+  },
+  commentAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  commentContent: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+    padding: 8,
+    borderRadius: 12,
+  },
+  commentAuthor: {
+    fontWeight: '600',
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  commentText: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  noCommentsText: {
+    color: '#6B7280',
+    textAlign: 'center',
+    padding: 8,
+    fontSize: 14,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  smallAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
   commentInput: {
     flex: 1,
     backgroundColor: '#F3F4F6',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
     borderRadius: 20,
-    fontSize: 15,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 8,
+    fontSize: 14,
   },
-  comment: { flexDirection: 'row', gap: 10, marginBottom: 12, alignItems: 'flex-start' },
-  commentBubble: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-    padding: 12,
-    borderRadius: 18,
-    borderTopLeftRadius: 4,
+  deleteCommentButton: {
+    padding: 4,
+    marginLeft: 4,
   },
-  commentName: { fontWeight: 'bold', color: '#111827', marginBottom: 4 },
-  commentText: { color: '#374151', fontSize: 15 },
-  commentTime: { fontSize: 12, color: '#9CA3AF', marginTop: 6 },
 });
